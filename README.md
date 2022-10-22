@@ -11,6 +11,7 @@ A general-purpose language like C# and F# must support
 The core assumptions of Tractor design are:
 
 - **NOT** a general-purpose language
+- Data and Logic are completely separate
 - Give the programmer control
 - Clarity is more important than brevity
 - Zero hidden allocation, no hidden safe copying
@@ -20,9 +21,9 @@ The core assumptions of Tractor design are:
 ## Desired Features
 
 - Statically Typed
-- Parametric Polymorphism for Collections
+- Parametric Polymorphism
 - Immutable by default
-- Mutation is allowed but is explicit
+- Mutation is allowed and is explicit
 - Polish Notation?
 - Order of precedence is left to right
 
@@ -34,7 +35,7 @@ The core assumptions of Tractor design are:
 
 ## Code Examples
 
-```
+```fsharp
 // Defining a Struct
 Chicken struct
     Size : f32
@@ -56,43 +57,45 @@ Direction union
 // Create a tuple
 x = 1, 2.0
 
+// Same thing with type declaration
+x : i32 * f32 = 1, 2.0
+
 // Unpack a tuple
 a, b = x
 
-// Define a prefix function, does not mutate data
-addInt32 func
-    (a: i32 -> b: i32 -> i32) // The final type is the return type
+// Define a function for adding i32 with explicity
+// type annotation
+addInt32 : i32 -> i32 -> i32 = { a b ->
     // Polish notation
     + a b
+}
 
-// Could also ommit type information and let inference figure it out
-addInt32 func
-    (a -> b -> _) // The final type is the return type
-    // Polish notation
+// Same thing but putting the type information on the variables
+addInt32 = { a:i32 b:i32 ->
     + a b
+}
 
-// Define a prefix function to add f32
-addFloat32 func
-    // Here we use an underscore to let type inference figure out the return type
-    (a: f32 -> b: f32 -> _) 
+// Define a function to add f32
+addFloat32 = { a:f32 b:f32 ->
     + a b
+}
 
 // Define the overloads for the `Add` function
-add func { addInt32; addFloat32; }
+add = { addInt32; addFloat32; }
 
-addInt8 func
-    (a: i8 -> b: i8 -> _)
+addInt8 = { a:i8 b:i8 ->
     + a b
+}
 
-// Extend the overloads for `Add` function
-Add func { AddInt8; Add; }
+// Extend the overloads for `add` function
+add = { addInt8; add; }
 
-// Define an infix function
-
-// Define Procedure, may mutate data
-DoSomething proc
-    (a: i32 -> c: i32[] -> unit)
-    // Procedure body here
+// Call the add function on i32
+x = add 1 2
+// Call the add function on i8
+x = add 1i8 2i8
+// COMPILER ERROR: No compatible overloads
+x = add 1 2i8
 
 
 // Binding a value. x is immutable
@@ -148,6 +151,28 @@ b2.Weight <- 100.0
 // COMPILER ERROR: This will not work because the field Size is not mutable
 b2.Size <- 12.0
 
+// Looping and iteration
+// There is only one looping construct, the while loop
+while <condition> do
+    // Loop body
+
+// The core collections can define their own looping constructs like
+// map, iter, mapi, iteri with higher ordered functions.
+
+// A classic for loop
+i =! 0 // Note this is mutable so it can be incremented
+
+while i < myArray.Length do
+    // do something here
+    // Increment the counter
+    i <- + i 1
+
+// Of course, the collections library would include more convenient looping constructs
+// that use higher-ordered functions
+myArray
+|> map {i ->
+    // Mapping logic
+}
 
 ```
 
