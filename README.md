@@ -1,410 +1,268 @@
 # Tractor: A CLR Language for Numerical Computation
 
-The original intention of the dotnet was to provide a runtime for many programming languages to run on. Two factors have kept that vision from fruition: tying .NET Framework to Windows and the dominance of C#.
+The original intention of .NET was to provide a runtime for many programming languages to run on with seamless interoperability. The CLR already has several excellent general-purpose languages which emphasize different paradigms (C#, F#, and VB.NET). The upside of a general-purpose language is that it gives you the tools for addressing a wide variety of problems. The downside is that, by definition, it not as efficient for domain specific problems. For example, SQL is the lingua franca language for querying data. It has an excellent set of abstractions for working with large sets of related data. HTML is a language for expressing the structure of a document.
 
-Dotnet can now run on almost any modern system. A significant push has been made toward performance features for C# and the CLR. The intention is to close the performance gap between systems-level programming languages (C, C++, Rust, Zig, and Odin, to name a few) and what can be achieved on the dotnet platform.
+Why not have a language that is specifically focused on expressing high-performance computation? Do not abstract away the fact that you are working with a CPU. Most languages are designed for an idealized computers and do not take into account that most CPUs are designed for working with arrays of data. Real world CPUs fetch and process data in chunks from the L1 cache all the way to pages of memory being managed by the operating system. Only at the register level does a CPU think of data in scalars.
 
-A general-purpose language like C# and F# must support 
+Most modern systems, as of 2023, have virtual memory capabilities which allow us to address a 64-bit memory space. Technically this is not the case. x86-64 allows you to use memory addresses based on [48-bits](https://en.wikipedia.org/wiki/X86-64) which is still an incredibly large memory space. The operating system hides the fact that this much space does not physically exist. We can exploit this fact to simplify how memory is allocated and collected based on the ideas put forth by [Ryan Fleury](https://www.rfleury.com/p/untangling-lifetimes-the-arena-allocator).
+
+The following is a proposal for a language targeting the CLR which allows us to express high-performance computation that would interoperate seamlessly with the general-purpose languages already targeting .NET. I am using a working name of Tractor. Most of the examples I use when teaching are based on farm animals so it felt natural to stick with that theme. This is a living document and will evolve as my learning grows.
+
+Also, I have no intention of actually creating this language any time soon. I am most interested in starting a discussion and soliciting feedback. Perhaps it will inspire someone else 😊. Feedback and crique is welcome. The aim of the language is to be simple and allow the user to write code that has [mechanical sympathy](https://dzone.com/articles/mechanical-sympathy) with the CPU.
 
 ## Guiding Principles
+
+Tractor takes inspiration from F#, Odin, and Nim.
 
 The core assumptions of Tractor design are:
 
 - **NOT** a general-purpose language
+- No garbage collection
 - Data and Logic are completely separate
-- Give the programmer control
-- Clarity is more important than brevity
 - Zero hidden allocation, no hidden safe copying
-- Data and Behavior are separate
-- A rich domain model makes it easier to reason
+- A rich domain model makes it easier to reason about and express algorithms
+- No support for interoperating with external runtimes
+- Languages call Tractor, Tractor does not call other languages
+- Users can write their own data structures
+- The runtime environment supports virtual memory and 64-bit memory addressing
 
-## Desired Features
+## Features
 
 - Statically Typed
 - Parametric Polymorphism
+- Expression oriented (everything returns something)
 - Immutable by default
 - Mutation is allowed and is explicit
-- Polish Notation?
-- Order of precedence is left to right
+- Memory Management through the use of Memory Contexts
+- [Uniform Function Call Syntax](https://en.wikipedia.org/wiki/Uniform_Function_Call_Syntax)
+- Procedure Overloading using order of declaration and "best fit" of types
+- No implicit casting
+- Automatic de-referencing of references
+- White space is significant
+- No reference types/objects. There are references to values though.
 
 ## Undesired Features
 
 - Reflection
-- Strings
 - Exceptions
 
-## Code Examples
+## Primitives
+
+The primitives of Tractor are:
+
+- Signed integers: `i8`, `i16`, `i32`, `i64`
+- Unsigned integers: `u8`, `u16`, `u32`, `u64`
+- Floats: `f32`, `f64`
+- Char (8-bit): `char`
+- Rune (UTF-8 character): `rune`
+- UTF-8 String: `str`
+- Ref: `^T`
+- Array: `'[]T`
+- Unit
+
+Other possibles
+- Slice (subsection of an array)
+
+## Bindings
+
+There are several different types of bindings in Tractor.
+
+- Compile Time: `name : [type] : expr`
+- Runtime: `name : [type] = expr`
+- Mutable: `name : [type] ! expr`
+
+A Compile Time binding must be able to be evaluated at the time the program is compiled. It is allowed to include expressions like `1.0 / 10.0` but all information for evaluating the expression must be available at compile time. These bindings cannot change.
+
+Runtime bindings are evaluated at the time the program is running. They are also immutable by default when they are evaluated. It is possible to shadow previous bindings by using the same name. The previous declaration will still exist though.
+
+Mutable bindings are evaluated at the time the program is run and are allowed to be changed as the program runs using the set operation `<-`.
+
+## User Defined Types
+
+Tractor takes heavy inspiration from [Odin](https://odin-lang.org/) and [Jai](https://github.com/BSVino/JaiPrimer/blob/master/JaiPrimer.md) for the value declaration syntax.
 
 ```fsharp
-// Defining a Struct
-Chicken struct
-    Size : f32
-    Age : i32
-    Weight : f32
+// Struct definition syntax
+struct-name :: struct
+    field-name : field-type
+    ...
 
-// Defining a Union
-Animal union
-    Chicken : Chicken
-    Bear : Bear
+// Struct example
+Chicken :: struct
+    Size: f32
+    Age: i32
+    Weight: f32
 
-// Define an Enum
-Direction union
+// Create an instance of Chicken
+c : Chicken =
+    Size 10
+    Age 1
+    Weight 10.0
+// Or with type inference
+c :=
+    Size 10
+    Age 1
+    Weight 10.0
+// Or with a single line
+c := (Size 10, Age 1, Weight 10.0)
+
+// You can create a new struct from an existing struct using `with`
+c2 := c with Size 20
+// Or on a separate line but within the scope
+c2 := c with
+    Size 20
+
+// It is also possible to define structs with generic types
+Entry<'a> :: struct
+    Value: 'a
+    Size: f64
+
+// Union definition syntax
+union-name :: union
+    case-name [: case-type]
+    ...
+
+// Union Example
+Animal :: union
+    Chicken: Chicken
+    Bear: Bear
+
+// Union with generic type
+Option<'a> :: union
+    Some: 'a
+    None
+
+// An Enum is a special case of Union
+Direction :: union
     North
     South
     East
     West
-
-// Create a tuple
-x = 1, 2.0
-
-// Same thing with type declaration
-x : i32 * f32 = 1, 2.0
-
-// Unpack a tuple
-a, b = x
-
-// Define a function for adding i32 with explicity
-// type annotation
-addInt32 : i32 -> i32 -> i32 = { a b ->
-    // Polish notation
-    + a b
-}
-
-// Same thing but putting the type information on the variables
-addInt32 = { a:i32 b:i32 ->
-    + a b
-}
-
-// Define a function to add f32
-addFloat32 = { a:f32 b:f32 ->
-    + a b
-}
-
-// Define the overloads for the `Add` function
-add = { addInt32; addFloat32; }
-
-addInt8 = { a:i8 b:i8 ->
-    + a b
-}
-
-// Extend the overloads for `add` function
-add = { addInt8; add; }
-
-// Call the add function on i32
-x = add 1 2
-// Call the add function on i8
-x = add 1i8 2i8
-// COMPILER ERROR: No compatible overloads
-x = add 1 2i8
-
-
-// Binding a value. x is immutable
-x = 10
-
-// Bind a value while specifying the type
-x : i32 = 10
-
-// Creating a variable. y is mutable
-y =! 10
-
-// Create a variable while specifying the type
-y : i32 =! 10
-
-// Assign a new value to y
-y <- 42
-
-// Bind c to a new instance of Chicken
-c = Chicken { Size 1.0; Age 10; Weight 12.2 }
-// or
-c = Chicken {
-    Size 1.0
-    Age 10
-    Weight 12.2
-}
-
-// Create an Animal Union
-a = Animal.Chicken c
-
-// Unpack a Union
-match a with
-| Chicken c -> // Chicken code
-| Bear b -> // Bear code
-
-// Define a Struct with a mutable field, Weight
-Bear struct
-    Size : f32
-    Weight : f32!
-
-// Bind b to a new instance of Bear
-b = Bear { Size 10.0; Weight 100.0 }
-
-// COMPILER ERROR: This will not work because b is not mutable
-b.Weight <- 110.0
-
-// Create mutable binding for b2
-b2 =! Bear { Size 10.0; Weight 100.0 }
-
-// This works now because b2 is a mutable binding and the Weight
-// field is mutable
-b2.Weight <- 100.0
-
-// COMPILER ERROR: This will not work because the field Size is not mutable
-b2.Size <- 12.0
-
-// Looping and iteration
-// There is only one looping construct, the while loop
-while <condition> do
-    // Loop body
-
-// The core collections can define their own looping constructs like
-// map, iter, mapi, iteri with higher ordered functions.
-
-// A classic for loop
-i =! 0 // Note this is mutable so it can be incremented
-
-while i < myArray.Length do
-    // do something here
-    // Increment the counter
-    i <- + i 1
-
-// Of course, the collections library would include more convenient looping constructs
-// that use higher-ordered functions
-myArray
-|> map {i ->
-    // Mapping logic
-}
-
-```
-
-
-## Types
-
-There are only Value types. Types are always copied by value. That value could be a typed pointer, though.
-
-## Primitives
-
-The primitive types are the building blocks upon which all other types are derived. They are divided into two categories: Data and Memory. 
-
-__Data Types__
-- Boolean: `true`, `false`
-- Integers: `i8`, `i16`, `i32`, `i64`
-- Unsigned Integers: `u8`, `u16`, `u32`, `u64`
-- Floats: `f16`, `f32`, `f64`
-
-__Memory Types__
-
-- Pointer: `p32`, `p64`
-- Typed Pointer: `Ptr<'T>`
-
-## Derived Types
-
-New types can be derived from the Primitives. Derived Types can be one of two forms: Struct or Union. Structs are a collection of fields. Unions are a collection of possible cases with the different type associated with each case.
-
-### Structs
-
-Structs are a collection of fields. Each field has a name and an associated type. The syntax for declaring a Struct is the following:
-
-```
-<Struct Name> struct
-    <Field Name> : <Field Type>
-    <Field Name> : <Field Type>
-    ...
-```
-
-An example of defining a `Chicken` type with a `Size` field of `f32` and an `Age` field of `i16` can be seen in the following code snippet.
-
-```
-Chicken struct
-    Size : f32
-    Age : i16
-```
-
-Structs can be created using a syntax similar to F#. What is different from F# is that you give the name of the Struct that you are trying to construct before the `{...}` construction syntax. When it comes to Records, I have found that type inference to not always be as helpful as I hoped. I often had to specify the return value to get the Record type I wanted.
-
-Here's an example of creating an instance of the `Chicken` type we declared before. We show both a single-line syntax and a multi-line syntax.
-
-```
-// Compiler should see that we are making a Chicken and automatically see that
-// 1.0 can be a `f32` and that 10 can be a `i16`
-myChicken = Chicken { Size 1.0; Age 10 }
-
-// Equivalent creation but using newlines
-myChicken = Chicken {
-    Size 1.0
-    Age 10
-}
-```
-
-You can also create new instances of a Struct from an existing one while updating fields using the `{ <Old Struct> with <Updated Fields> }` syntax.
-
-```
-newChicken = { myChicken with Size 2.0 }
-```
-
-By default, Structs are immutable. It is possible to declare that a field is immutable, though, by using the `!` symbol after the field type. Let's return to our `Chicken` type, add a field for Weight, and make it a mutable float 32.
-
-```
-Chicken struct
-    Size : f32
-    Age : i16
-    Weight : f32! // <-- This field can be mutated
-```
-
-### Unions
-
-Unions are a collection of cases with types associated with the cases. The syntax for a Union declaration is as follows:
-
-```
-<Union Name> union
-    <Case Name> : <Case Type>
-    <Case Name> : <Case Type>
-    ...
-```
-
-An example of defining an `Animal` Union with two cases, `Chicken` and `Dog,` can be seen in the following code snippet. Note that the Case Name matches the type name associated with the Union Case. This is unnecessary but common when domain modeling.
-
-```
-Animal union
-    Chicken : Chicken
-    Dog : Dog
-```
-
-A Union's size will equal the size of the largest possible case + `u32`. The `u32` serves as the tag for which case the Union is.
-
-Enums are a special case of Union. There are a set of Union cases with no types associated with the different cases. Here is an example of an Enum using a Union:
-
-```
-MyFauxEnum union
-    CaseA
-    CaseB
-    CaseC
-```
-
-To check the case of a Union, you use a `match...with` a statement like in F#.
-
-```
-myChicken = Chicken { Size 1.0; Age 10 }
-myAnimal = Animal.Chicken myChicken
-
-match myAnimal with
-| Chicken c -> // Chicken logic
-| Dog d -> // Dog logic
-```
-
-## Functions
-
-While Tractor is not a functional language in the Computer Science since, it does have first class functions.
-
-```
-myFunction func
-    (a: int -> b: int -> int)
+    
+// Boolean is a special case of Union
+Boolean :: union
+    True
+    False
+
+// For ease of development, there is an alias for true and false
+true :: Boolean.True
+false :: Boolean.False
+
+// Expressions
+expr-name :: expr ([parameter-name[:parameter-type], ...]) [-> return-type]
+    expr-body
+    
+// or in a more horizontally compact form
+expr-name :: expr
+    ([[parameter-name]:parameter-type ...])
+    [-> return-type]
+    expr-body
+    
+// An expression for adding two i32
+Add2 :: expr (a: i32, b:i32) -> i32
     a + b
+    
+// Same expression with more type inference
+Add2 :: expr (a: i32, b)
+    a + b
+// The type of `b` and the return type are inferred based on `a` being an `i32`
 ```
 
-## Units of Measure
+## Basic Syntax
 
-It is possible to annotate the Data Primitives with additional type information using Units of Measure (UoM). UoM ensures that the algebra between the data types behaves as it should. To declare a new UoM, use the `measure` keyword. The syntax for declaring a Unit of Measure is as follows.
+```fsharp
+// Syntax for declaring a value
+value-name : [type] = value
+// The Type Annotation can be ommited and type inference will resolve
+// the type being declared
 
-```
-<Unit Name> measure
-```
+// The integers 8-bit through 64-bit
+// i8, i16, i32, i64
+x : i8  = 10   // 8-bit integer
+x : i16 = 10 // 16-bit integer
+x : i32 = 10 // 32-bit integer
+x : i64 = 10 // 64-bit integer
 
-To declare a `Meter` as a Unit of Measure, you can do the following:
+// 32-bit integer is the default integer size so this would result
+// in a 32-bit integer being bound to the value of x
+x := 10
 
-```
-Meter measure
-```
+// The unsigned integers
+// u8, u16, u32, u64
+x : u8  = 10   // 8-bit integer
+x : u16 = 10 // 16-bit integer
+x : u32 = 10 // 32-bit integer
+x : u64 = 10 // 64-bit integer
 
-You can now annotate your Data Primitives with UoM using the following syntax:
+// The floats
+x : f32 = 10
+x : f64 = 10
 
-```
-<Value Name> = <Data Type><Measure Name>
-```
+// You may have noticed that the values being bound to `x` did not have a `.`
+// at the end. This is because the type annotation made it clear that the values
+// were to be interpreted as f32 and f64. If you wish to omit the type annotation
+// you can include a `.` at the end to indicate the value is meant to be interpreted
+// as a float. A 64-bit float is the default size for float values.
+x := 10.0 // f64
+// or
+x := 10. // f64
+// It is encouraged to include at least a single `0` after the `.` for style
+// but is not enforced by the compiler.
 
-Here is an example of declaring a value `x` and assigning it the float32 value of 12.0 meters.
-
-```
-x = 12 f32<Meter>
-```
-
-## Distinct
-
-> See Odin's `distinct` feature: https://odin-lang.org/docs/faq/#what-does-distinct-do
-
-The `distinct` keyword allows you to define a new type that has all the same functionality as the source type, but makes it unique type unto itself. This means that if you have a type `'T` that defines addition as `'T -> 'T -> 'T` then the new type `'TDistinct` will also have addition defined, `'TDistinct -> 'TDistinct -> 'TDistinct`, but it will not be compatible with the type `'T`.
-
-Here is an example of this in action:
-
-```
-NewType = distinct int32
-
-x1 = 1
-x2 = 2
-z = x1 + x2 // This works because int32 defines addition
-
-myNewType = NewType 1
-/*
-This will not work because int32 cannot be
-added with the distinct type NewType even
-though they are both int32 in memory
-*/
-z2 = x1 + myNewType
-
+// Values are immutable by default. If you wish to have a value which can be mutated
+// you may use a mutable binding.
+x :! 10 // mutable i32
 ```
 
-## Equality, Hashing, and Comparison
+## Uniform Function Call Syntax
 
-There are two different types of equality, structural and referential. To test whether two values contain the same data and therefore structurally equivalent, use the `=` operator. If you want to know if 
+Tractor does not have objects in the .NET sense. This means that types do not have methods associated with them. Instead, Tractor supports [Uniform Function Call Syntax](https://en.wikipedia.org/wiki/Uniform_Function_Call_Syntax) in the vein of [Nim](https://nim-lang.org/) and [D](https://dlang.org/). This means that we can still use dot-driven development.
 
-## Loops
-
-Tractor steals the looping concepts of Odin and only has a single looping mechanism, the `for` loop.
-Odin Loops: https://odin-lang.org/docs/overview/#for-statement
-
-```
-for <Pre Loop Action>; <Loop Condition>; <Post Iteration Action> do
-    // Loop actions
-```
-
-An example of looping 
-
-
-## Automatic Looping
-
-Looping is ubiquitous in programming, so it would be natural for there to be a way to express operations on collections of values. Most of the C-derived languages use a `for` loop for iteration. Languages in the functional/ML tradition use higher-ordered functions like `iter` and `map`. Array-oriented languages raise the level of abstraction by automatically operating on arrays of values. This can lead to some terse and powerful programs. The Julia language incorporates an interesting feature which is the addition of a broadcasting macro that turns a scalar function into something that operates over the elements of a collection by prepending the function with a broadcast operator, which is a period in Julia.
-
-Tractor believes in the idea of keyed data. Much like a database table, every collection is not just a set of values but a key/value collection. This means that
-
-```
-
+```fsharp
+Chicken :: struct
+    Name: string
+    Size: float
+    
+Grow :: expr (c: Chicken, sizeToAdd)
+    c with Size (c.Size + sizeToAdd)
+    
+// You can call the `Grow` expression apart from the type
+c1 := Name "Chicky", Size 10.0
+c2 := Grow(c1, 1.0)
+// or use UFCS
+c2 := c1.Grow(1.0)
+// By using UFCS, the compiler knows that we must be calling an expression where the first
+// parameter is a `Chicken` and automatically puts that value in the first argument.
 ```
 
 ## Memory Management
 
-I would say that Tractor has manumatic memory management through Memory Contexts. When a Tractor process starts up, an implicit Memory Context is created. The default Memory Context has an Arena Allocator (AA), which it uses for providing memory to code that requests allocation. All memory allocation requests are handled by whichever Memory Context is in scope. When a Memory Context scope is left, the allocator's `free_all` method is called, and the allocator is returned to the allocator pool.
-
-If there were only a single Memory Context, then everything would be allocated to the main thread's Arena Allocator, and it would be easy to allocate excessive memory. To curb this, it is possible to create new Memory Contexts using the `context` keyword. An example of creating a new Memory Context with the default settings can be seen here.
+Tractor is does not have manual memory management, nor does it have a Garbage collection. It uses what I refer to as manu-matic memory management. There is always an allocator that is in scope that allocates space using a simple [Arena Allocator](https://en.wikipedia.org/wiki/Region-based_memory_management). These types of allocators are also referred to as Region Allocators. When a Tractor program starts it creates a Region for the root of the program. As the program progresses, the user can allocate a value on in the Region using the `new` keyword.
 
 ```fsharp
+// Stack allocated Chicken
+c1 := Name "StackChicken" Size 1.0
 
-let processFrame () =
-    context () {// All code after this point will be allocated to the new Memory Context
-        // Do lots of work here
-    } // When the Context exits here, the Memory Context will clear the memory
+// Heap allocated Chicken
+c2 := new (Name "HeapChicken" Size 2.0)
+// Heap allocated Chicken with explicit typing
+c2 : ^Chicken = new (Name "HeapChicken" Size 2.0)
 ```
 
-By using memory contexts, it is possible to allow for the allocation to a heap-like space while not incurring excessive overhead from a Garbage Collector.
+When using the `new` keyword to create an instance of a value a reference to the value is returned. This means that `c2` in the previous example is not a `Chicken` but a `^Chicken`. Fields of references are automatically de-referenced when accessed so there is not syntactic overhead when using a stack-allocated value versus a heap-allocated value.
 
-What happens when you need to return data that would be allocated to a child context
+If there was only ever a single Region, a Tractor program could potentially allocate a large amount of memory. To address this issue we take advantage of virtual memory on 64-bit based systems. We can create a new heap using the `region` keyword.
 
-## Collections
+```fsharp
+// Expression that creates a new Region
+FrameLogic :: (state: State)
+    // Declare that a new Region should be used for newly allocated values
+    region
+        // Do some work here
+```
 
-The Tractor language would not include these collections as a default. These would exist as data structures composed of the existing primitives.
+A Region is an allocation scope. When we declare a new Region using the `region` keyword we are saying that all uses of the `new` keyword will allocate to this new Region. When the Region is leaves scope, we return the allocation pointer to the beginning of the Region and therefore instantly de-allocate all of the memory.
 
-- Array
-- HashTable
-- HashSet
-- Map
-- Set
-- Row
-- Bar
+For this to work we cannot have references going from a parent Region to a child Region. This means that the compiler is aware of which references belong to each Region. This somewhat analogous to the Borrow Check in Rust but far simpler. The compiler is ensuring that we will not create invalid references. It is possible for a Child Region to hold references to a Parent region since those references will not go out of scope.
+
+This is all possible due to Memory Virtualization. Tractor will keep subdividing the Virtual Memory space when new Regions are required. Since the Virtual Memory space on an x86-64 system is 256TB of space, it is unlikely the program will run out of virtual space. Only when memory is actually required will the space be actually requested from the operating system.
