@@ -57,7 +57,7 @@ The primitives of Tractor are:
 - Rune (UTF-8 character): `rune`
 - UTF-8 String: `str`
 - Ref: `^T`
-- Array: `'[]T`
+- Array: `[]T`
 - Unit
 
 Other possibles
@@ -113,8 +113,8 @@ c2 := c with
     Size 20
 
 // It is also possible to define structs with generic types
-Entry<'a> :: struct
-    Value: 'a
+Entry<T> :: struct
+    Value: T
     Size: f64
 
 // Union definition syntax
@@ -128,8 +128,8 @@ Animal :: union
     Bear: Bear
 
 // Union with generic type
-Option<'a> :: union
-    Some: 'a
+Option<T> :: union
+    Some: T
     None
 
 // An Enum is a special case of Union
